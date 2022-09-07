@@ -28,25 +28,6 @@ import json
 
 PROJECT = 'editable_nerf'
 
-# ------------------------------------------------------------------------------
-# TODO:
-# read how to instantiate neumesh
-# create a dataset class
-# how to forward through the model``
-# compute volume rendered colors
-# Creating the mesh sampler
-#     # for each ray point get distance, indices, weights
-#     # Update: actually not needed. Just pass to neumesh model
-# ------------------------------------------------------------------------------
-
-# ------------------------------------------------------------------------------
-# TODO Training LOOP:
-# 1. for each epoch:
-#     2. for each batch:
-#          3. get a pose, and sample rays from the pose. In world cood - get ro+rd
-#          4. sample points along the ray
-#          5. density, color = forward(xyz, view_dirs)
-
 
 def main(args):
     pass
