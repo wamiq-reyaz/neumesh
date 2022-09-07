@@ -96,13 +96,13 @@ def c2w_track_spiral(
 def render_function(args, model, render_kwargs_test, render_fn, ckpt_file=""):
 
     io_util.cond_mkdir("./out")
-
     if args.dataset_split is not None:
         args.data.split = args.dataset_split
     dataset = get_data(args, downscale=args.downscale)
 
     (_, model_input, ground_truth) = dataset[0]
     intrinsics = model_input["intrinsics"].cuda()
+
     H, W = (dataset.H, dataset.W)
     # NOTE: fx, fy should be scalec with the same ratio. Different ratio will cause the picture itself be stretched.
     #       fx=intrinsics[0,0]                   fy=intrinsics[1,1]
@@ -122,6 +122,7 @@ def render_function(args, model, render_kwargs_test, render_fn, ckpt_file=""):
         intrinsics[0, 2] *= W / dataset.W
     log.info("=> Rendering resolution @ [{} x {}]".format(H, W))
 
+    print(intrinsics)
     c2ws = torch.stack(dataset.c2w_all, dim=0).data.cpu().numpy()
 
     # -----------------
@@ -197,6 +198,8 @@ def render_function(args, model, render_kwargs_test, render_fn, ckpt_file=""):
 
     assert len(render_c2ws) == len(view_list)
     for idx, c2w in enumerate(tqdm(render_c2ws, desc="rendering...")):
+        # print('pose0')
+        # print(c2w)
         if  not args.disable_rgb:
             rays_o, rays_d, select_inds = rend_util.get_rays(
                 torch.from_numpy(c2w).float().cuda()[None, ...],
@@ -207,6 +210,8 @@ def render_function(args, model, render_kwargs_test, render_fn, ckpt_file=""):
             )
             with torch.no_grad():
                 # NOTE: detailed_output set to False to save a lot of GPU memory.
+                import time
+                start = time.time()
                 rgb, depth, extras = render_fn(
                     rays_o,
                     rays_d,
@@ -215,6 +220,7 @@ def render_function(args, model, render_kwargs_test, render_fn, ckpt_file=""):
                     detailed_output=False,
                     **render_kwargs_test
                 )
+                print(f'time per frame {time.time() - start}')
                 depth = depth.data.cpu().reshape(H, W, 1).numpy()
                 depth = depth / depth.max()
                 rgb_imgs.append(rgb.data.cpu().reshape(H, W, 3).numpy())

@@ -21,6 +21,12 @@ def load_K_Rt_from_P(P):
     pose = np.eye(4, dtype=np.float32)
     pose[:3, :3] = R.transpose()
     pose[:3, 3] = (t[:3] / t[3])[:, 0]
+    
+    # print('intrinsics', intrinsics)
+    # print('pose', pose)
+    # print('full_mat', P)
+    # import sys
+    # sys.exit()
 
     return intrinsics, pose
 

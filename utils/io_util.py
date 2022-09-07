@@ -11,11 +11,84 @@ import argparse
 import functools
 import numpy as np
 import json
+import uuid
+import datetime
+import open3d as o3d
 
 
 import torch
 import skimage
 from skimage.transform import rescale
+
+
+def sanitize_for_o3d(x):
+    if isinstance(x, torch.Tensor):
+        x = x.detach().cpu().numpy()
+    if isinstance(x, np.ndarray):
+        if x.dtype == np.float64:
+            x = x.astype(np.float32)
+
+    if x.ndim == 3:
+        x = np.squeeze(x)
+            
+    if x.ndim != 2:
+        raise ValueError("Invalid shape for points/normals/color")
+    return x
+
+def rays_to_pcd(points=None, normals=None, color=None):
+    """Create a point cloud from raw points.
+
+    Args:
+        points (np.ndarray): (N, 3) array of points.
+        normals (np.ndarray): (N, 3) array of normals. Defaults to None.
+        color (np.ndarray): (N, 3) array of colors. Defaults to None.
+
+    Returns:
+        o3d.geometry.PointCloud: Point cloud.
+    """            
+
+    pc = o3d.geometry.PointCloud()
+    pc.points = o3d.utility.Vector3dVector(sanitize_for_o3d(points))
+    if color is not None:
+        pc.colors = o3d.utility.Vector3dVector(sanitize_for_o3d(color))
+    if normals is not None:
+        pc.normals = o3d.utility.Vector3dVector(sanitize_for_o3d(normals))
+    return pc
+
+
+def gen_expt_prefix(debug=False):
+    time_prefix = datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+    random_prefix = str(uuid.uuid4())[:8]
+    if debug:
+        prefix = 'debug_'
+    else:
+        prefix = ''
+    return f"{prefix}{time_prefix}_{random_prefix}"
+
+
+def save_ckpt(model, path, curr_iter, optimizer=None, scheduler=None, **kwargs):
+    """Save model and training states at checkpoint.
+
+    Args:
+        model (nn.Module): Model to be saved.
+        path (str): Path to save checkpoint.
+        epoch (int): Current epoch.
+        optimizer (Optimizer, optional): Optimizer used in training.
+            Defaults to None.
+        scheduler (LRScheduler, optional): Lr scheduler used in training.
+            Defaults to None.
+        **kwargs (dict, optional): Other things to be saved in checkpoint.
+            Defaults to None.
+    """
+    ckpt = {"curr_iter": curr_iter, "model": model.state_dict()}
+    if optimizer is not None:
+        ckpt["optimizer"] = optimizer.state_dict()
+    if scheduler is not None:
+        ckpt["scheduler"] = scheduler.state_dict()
+    ckpt.update(kwargs)
+
+    ckpt_path = os.path.join(path, "ckpt_iter_{:09d}.pth".format(curr_iter))
+    torch.save(ckpt, ckpt_path)
 
 
 def glob_imgs(path):
@@ -85,7 +158,6 @@ def backup(backup_dir):
         "dataio/",
         "models/",
         "tools/",
-        "debug_tools/",
         "utils/",
         "models/frameworks",
         "configs/",
@@ -382,3 +454,7 @@ def load_config(args, unknown, base_config_path=None):
         print("=> Use cuda devices: {}".format(config.device_ids))
 
     return config
+
+
+if __name__ == "__main__":  
+    print(f'{gen_epxt_prefix()}')

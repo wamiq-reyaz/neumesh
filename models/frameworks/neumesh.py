@@ -18,6 +18,8 @@ import open3d as o3d
 from models.base import get_embedder
 import frnn
 from utils.checkpoints import CheckpointIO
+from time import time
+
 
 
 def load_ckpt(ckpt_path, model):
@@ -552,6 +554,8 @@ def volume_render(
         # Up Sampling
         if b_out_samples == True:
             samples_tot = {"xyz": [], "density": [], "colors": []}
+        start = time()
+        # print(f'Upsampling iters {N_upsample_iters}')
         with torch.no_grad():
             if upsample_algo == "official_solution":
                 _d = d_coarse
@@ -630,6 +634,8 @@ def volume_render(
         # pts_mid = 0.5 * (pts[..., 1:, :] + pts[..., :-1, :])
         d_mid = 0.5 * (d_all[..., 1:] + d_all[..., :-1])
         pts_mid = rays_o[..., None, :] + rays_d[..., None, :] * d_mid[..., :, None]
+
+        # print(f'time taken to sample rays {time() - start}')
         # ------------------
         # Inside Scene
         # ------------------
@@ -660,6 +666,8 @@ def volume_render(
             rad_sdf, radiances = batchify_query(
                 model.forward, pts_mid, random_direction
             )
+
+        # print(f'time to eval network queries {time() - start}')
         if b_out_samples == True:
             samples_tot["xyz"].append(pts_mid)
             samples_tot["density"].append(rad_sdf)
@@ -686,6 +694,8 @@ def volume_render(
 
         if white_bkgd:
             rgb_map = rgb_map + (1.0 - acc_map[..., None])
+
+        # print(f'time to integrate {time() - start}')
 
         ret_i = OrderedDict(
             [
@@ -729,10 +739,13 @@ def volume_render(
     for i in tqdm(
         range(0, rays_o.shape[DIM_BATCHIFY], rayschunk), disable=not show_progress
     ):
+        # print(f'{rayschunk} '*99)
+        start = time()
         ret_i = render_rayschunk(
             rays_o[:, i : i + rayschunk] if batched else rays_o[i : i + rayschunk],
             rays_d[:, i : i + rayschunk] if batched else rays_d[i : i + rayschunk],
         )
+        # print(f'time to render chunk of size {rayschunk} {time() - start}')
         for k, v in ret_i.items():
             if k not in ret:
                 ret[k] = []
@@ -753,7 +766,8 @@ class MeshSampler:
 
         mesh_t = o3d.t.geometry.TriangleMesh.from_legacy(mesh)
         self.scene = o3d.t.geometry.RaycastingScene()
-        _ = self.scene.add_triangles(mesh_t)  # we do not need the geometry ID for mesh
+        # TODO: do we even need this?
+        # _ = self.scene.add_triangles(mesh_t)  # we do not need the geometry ID for mesh
 
         self.mesh_vertices = torch.FloatTensor(np.asarray(self.mesh.vertices)).to(
             device
@@ -800,6 +814,7 @@ class MeshSampler:
         indicator_vector=None,
         indicator_weight=0.1,
     ):
+        start = time()
         dis, indices, _, _ = frnn.frnn_grid_points(
             xyz.unsqueeze(0),
             self.mesh_vertices.unsqueeze(0),
@@ -812,6 +827,7 @@ class MeshSampler:
             return_sorted=True,
         )  # (1,M,K)
         # detach to make the other differentiable
+        # print(f'querying this many points {xyz.shape} with this many vertices {self.mesh_vertices.shape}')
         dis = dis.detach()
         indices = indices.detach()
         dis = dis.sqrt()
@@ -819,6 +835,7 @@ class MeshSampler:
         weights = weights / torch.sum(weights, dim=-1, keepdims=True)  # (1,M,K)
         indices = indices.squeeze(0)  # (M, K)
         weights = weights.squeeze(0)  # (M, K)
+        # print(xyz.shape)
         distance = torch.zeros((xyz.shape[0], 1)).to(xyz.device)
         if use_middle_vector:
             indicator_vec = (
@@ -851,6 +868,8 @@ class MeshSampler:
 
             distance = torch.sum(distance, dim=-2)
         # distance = dis[..., 0:1]
+        # print(f'time taken to find nn is {time() - start}')
+
         return distance, indices, weights
 
     def cast_ray(self, rays_o, rays_d):
