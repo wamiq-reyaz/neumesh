@@ -105,7 +105,7 @@ def render_val(config, model, render_kwargs_test, render_fn, pose, camera_params
     W /= config['data']['val_downscale']
     focal /= config['data']['val_downscale']
 
-    H, W, focal = int(H), int(W), int(focal)
+    H, W, focal = int(H), int(W), focal
 
     intrinsics = np.array([
         [focal, 0, 0.5*W, 0],
@@ -216,6 +216,10 @@ if __name__ == '__main__':
                                                             half_res=args.half_res,
                                                             testskip=1,
                                                             splits=['train', 'test'])
+
+    # print(np.min(imgs), np.max(imgs))
+    # import sys
+    # sys.exit()
     
     print(f'Loaded dataset: \n\
             Images: {imgs.shape},\n\
@@ -285,7 +289,7 @@ if __name__ == '__main__':
         # ------------------------------------------------------------------------------
 
         if curr_iter % config['training']['i_render'] == 0:
-            render_val(config, model, render_kwargs_test, render_fn, render_poses[0], camera_params)
+            render_val(config, model, render_kwargs_test, render_fn, poses[i_split[1][0]], camera_params)
 
     # ------------------------------------------------------------------------------
     # save final checkpoint
