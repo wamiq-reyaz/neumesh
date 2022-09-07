@@ -2,12 +2,12 @@ data:
   N_rays: 512
   batch_size: 1
   cam_file: cameras_sphere.npz
-  data_dir: /home/parawr/Projects/adobe/neumesh/data/blender_sheep
+  data_dir: /datawaha/cggroup/parawr/datasets/editable_nerf/blender_sheep
   downscale: 1
   pin_memory: true
   split: train
   type: DTU
-  val_downscale: 8
+  val_downscale: 1
   val_rayschunk: 16384
 device_ids:
 - 0
@@ -21,7 +21,7 @@ neumesh:
   learn_indicator_vector: true
   loss_weights:
     eikonal: 1.0
-  prior_mesh: /home/parawr/Projects/adobe/neumesh/data/blender_sheep/base.obj
+  prior_mesh: /datawaha/cggroup/parawr/datasets/editable_nerf/blender_sheep/base.obj
   # prior_mesh: /home/parawr/Projects/adobe/neumesh/meshes/teacher/dtu_scan63/dtu_scan63.ply
   training_type: null
   union_training: true
@@ -40,7 +40,7 @@ model:
     multires_fg: 2
     multires_ft: 2
     multires_view: 4
-  obj_bounding_radius: 1.0 # sheep is probably larger
+  obj_bounding_radius: 1.5 # sheep is probably larger
   radiance:
     D: 4
     W: 256
@@ -65,7 +65,7 @@ training:
   i_save: 900
   i_val: 10000
   i_val_mesh: 50000
-  i_render: 10000
+  i_render: 1000
   log_root_dir: logs
   lr: 0.0005
   monitoring: tensorboard
