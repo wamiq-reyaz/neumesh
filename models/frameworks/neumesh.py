@@ -454,6 +454,7 @@ class NeuMesh(nn.Module):
         too_close = (far - near) < 0.1
         far[too_close] += 0.05
         near[too_close] -= 0.05
+        # print(near, far)
         return near, far
 
 
