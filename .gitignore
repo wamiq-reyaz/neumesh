@@ -8,3 +8,5 @@ wandb
 playground
 *.ply
 */*.ply
+env
+env/*

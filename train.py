@@ -29,6 +29,9 @@ import json
 PROJECT = 'editable_nerf'
 
 
+def integerify(img):
+    return (img * 255.0).astype(np.uint8)
+
 def main(args):
     pass
 
@@ -93,9 +96,10 @@ def val(config, curr_iter, model, optimizer, imgs, poses, render_poses, camera_p
 def render_val(config, model, render_kwargs_test, render_fn, pose, camera_params):
     """ reimplementation of render_function in render.py
     """
-    def integerify(img):
-        return (img * 255.0).astype(np.uint8)
 
+    if isinstance(pose, np.ndarray):
+        pose = torch.from_numpy(pose)
+    
     # construct intrinsic matrix
     H, W, focal = camera_params
     # print(f'H, W, focal: {H, W, focal}')
@@ -137,13 +141,13 @@ def render_val(config, model, render_kwargs_test, render_fn, pose, camera_params
     # print(f'type of rays_o, rays_d: {type(rays_o), type(rays_d)}')
     # print(f'rays_o.shape: {rays_o.shape}')
     # print(f'rays_d.shape: {rays_d.shape}')
-    if args.debug:
-        print('saving rays as a point cloud with normals')
-        # furhter = rays_d * 10
-        points = torch.cat([rays_o+rays_d, rays_o + 4*rays_d], dim=1)
-        pcd = io_util.rays_to_pcd(points=points, normals=rays_d)
-        o3d.io.write_point_cloud('rays.ply', pcd)
-        print(rays_o)
+    # if args.debug:
+    #     print('saving rays as a point cloud with normals')
+    #     # furhter = rays_d * 10
+    #     points = torch.cat([rays_o+rays_d, rays_o + 4*rays_d], dim=1)
+    #     pcd = io_util.rays_to_pcd(points=points, normals=rays_d)
+    #     o3d.io.write_point_cloud('rays.ply', pcd)
+    #     print(rays_o)
 
     with torch.no_grad():   
         rgb, _, _ = render_fn(
@@ -171,6 +175,8 @@ def render_val(config, model, render_kwargs_test, render_fn, pose, camera_params
           
         wandb.log({"val/images": images})
 
+    return img
+
 
 
 if __name__ == '__main__':
@@ -179,7 +185,10 @@ if __name__ == '__main__':
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--half_res', action='store_true')
+    parser.add_argument('--just_render', action='store_true')
+    parser.add_argument('--render_path', type=str, default='renders')
     args, unknown = parser.parse_known_args()
+    
 
     config = io_util.load_config(args, {'exp_name': 'test'})
     # print(f'Loading config from {args.config}')
@@ -232,7 +241,7 @@ if __name__ == '__main__':
     # ------------------------------------------------------------------------------
     # setup experiments directory
     # ------------------------------------------------------------------------------
-    expt_prefix = io_util.gen_expt_prefix(debug=args.debug)
+    expt_prefix = io_util.gen_expt_prefix(debug=args.debug, render=args.just_render)
     full_expt_path = os.path.join('.', 'out', config['expname'], expt_prefix)
     print(f'Saving experiment to {full_expt_path}')
     print(f'Current experiment is {expt_prefix}')
@@ -262,6 +271,19 @@ if __name__ == '__main__':
     for curr_iter in trange(config['training']['num_iters']):
         # TODO: implement warmup
 
+        if args.just_render:
+            os.makedirs(args.render_path, exist_ok=True)
+            for ii in i_split[1]:
+                img = render_val(config, model, render_kwargs_test, render_fn, poses[i_split[1][ii]], camera_params)
+                save_path = os.path.join(args.render_path, f'{ii:05d}.png')
+                print(f'Saving image to {save_path}')
+                imageio.imwrite(save_path, np.squeeze(img))
+
+            wandb.finish()
+            import sys
+            sys.exit()
+
+
         curr_loss = train(config, curr_iter, model, optimizer, imgs, poses, render_poses, camera_params, i_split, render_kwargs_test, render_fn)
         wandb.log({"train/loss": curr_loss}, step=curr_iter)
         
@@ -280,16 +302,12 @@ if __name__ == '__main__':
                         pnsr=psnr,
                         mse=mse) # TODO add scheduler
 
-        
-
-        
-       
         # ------------------------------------------------------------------------------
         # save images
         # ------------------------------------------------------------------------------
-
+        
         if curr_iter % config['training']['i_render'] == 0:
-            render_val(config, model, render_kwargs_test, render_fn, poses[i_split[1][0]], camera_params)
+            render_val(config, model, render_kwargs_test, render_fn, poses[i_split[1][50]], camera_params)
 
     # ------------------------------------------------------------------------------
     # save final checkpoint
