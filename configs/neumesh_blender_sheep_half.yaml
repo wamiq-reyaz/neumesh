@@ -2,7 +2,7 @@ data:
   N_rays: 512
   batch_size: 1
   cam_file: cameras_sphere.npz
-  data_dir: /datawaha/cggroup/parawr/datasets/editable_nerf/blender_sheep
+  data_dir: /mnt/datawaha/datasets/editable_nerf/blender_sheep
   downscale: 1
   pin_memory: true
   split: train
@@ -21,7 +21,7 @@ neumesh:
   learn_indicator_vector: true
   loss_weights:
     eikonal: 1.0
-  prior_mesh: /datawaha/cggroup/parawr/datasets/editable_nerf/blender_sheep/base.obj
+  prior_mesh: /mnt/datawaha/datasets/editable_nerf/blender_sheep/base.obj
   # prior_mesh: /home/parawr/Projects/adobe/neumesh/meshes/teacher/dtu_scan63/dtu_scan63.ply
   training_type: null
   union_training: true

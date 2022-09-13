@@ -9,6 +9,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import random
+import torchvision.transforms as T
+
 
 
 from utils import io_util, rend_util
@@ -28,6 +30,8 @@ import json
 
 PROJECT = 'editable_nerf'
 
+def integerify(img):
+    return (img * 255.0).astype(np.uint8)
 
 def main(args):
     pass
@@ -45,6 +49,9 @@ def train(config, curr_iter, model, optimizer, imgs, poses, render_poses, camera
     if config['training'].get('sampling', 'rays_per_image') == 'rays_per_image':
         # choose an image and sample points and rays on that image
         i_img = random.choice(i_split[0]) 
+        # print(i_split)
+        # print(len(i_split[0]), len(i_split[1]))
+        # i_img = i_split[0][0]
         curr_img = imgs[i_img] # HxWx4
         curr_pose = poses[i_img] # 4x4
         curr_img = torch.from_numpy(curr_img).cuda() # HxWx4
@@ -58,6 +65,24 @@ def train(config, curr_iter, model, optimizer, imgs, poses, render_poses, camera
             config['data']['N_rays']
         )
 
+        # print(rays_o.shape, rays_d.shape)
+
+        # invert z
+        if config['invert_z']:
+            rays_o = torch.matmul(torch.tensor([[1, 0, 0.],
+                                                [0, 1, 0.],
+                                                [0, 0, -1]], device=rays_o.device).unsqueeze(0),
+                                rays_o[..., None]).squeeze(-1) # (1x3x3) x (nx3x1) and squeeze
+
+            # rotate to invert z on the directions
+            rays_d = torch.matmul(torch.tensor([[1, 0, 0.],
+                                                [0, 1, 0.],
+                                                [0, 0, -1]], device=rays_d.device).unsqueeze(0),
+                                rays_d[..., None]).squeeze(-1) # (1x3x3) x (nx3x1) and squeeze
+
+        # print(rays_o.shape, rays_d.shape)
+
+
         # rays_o: 1xNx3, rays_d: 1xNx3, selected_idx: 1xN
         # curr_img: HxWx4
 
@@ -66,21 +91,71 @@ def train(config, curr_iter, model, optimizer, imgs, poses, render_poses, camera
         # print(f'image device: {curr_img.device}')
         # sample GT RGB values
         selected_idx = selected_idx.squeeze(0) # N
+        # print(f'selected idx.shape {selected_idx.shape}')
         curr_img = curr_img[..., :3] # HxWx3 drop alpha
+        # curr_img = curr_img.permute(1,0,2)
+        cc = curr_img.clone().detach().cpu()
         curr_img = curr_img.reshape(-1, 3) # HxWx3 -> (HxW)x3
+
         gt_rgb = curr_img[selected_idx] # Nx3
+
+
+        # if args.debug:
+        #     print('saving rays as a point cloud with normals')
+        #     # furhter = rays_d * 10
+        #     points = torch.cat([rays_o, rays_o - 4*rays_d], dim=1)
+        #     pcd = io_util.rays_to_pcd(points=points, normals=rays_d)
+        #     o3d.io.write_point_cloud('rays_partial.ply', pcd)
+
+
+        #     points = torch.cat([-rays_o, -rays_o + 4*rays_d], dim=1)
+        #     pcd = io_util.rays_to_pcd(points=points, normals=rays_d)
+        #     o3d.io.write_point_cloud('rays_partial_inverted.ply', pcd)
+
+        #     points = torch.cat([rays_o, rays_o + 4*rays_d], dim=1)
+        #     pcd = io_util.rays_to_pcd(points=points, normals=rays_d)
+        #     o3d.io.write_point_cloud('rays_rotated.ply', pcd)
+
+        #     curr_img[selected_idx] = 1 # turn everything white
+
+        #     black_img = torch.zeros((H*W, 3)).cuda()
+        #     black_img[selected_idx] = 1
+
+        #     curr_img = T.functional.to_pil_image(curr_img.clone().detach().cpu().reshape(H, W, 3).permute(2,0,1))
+        #     black_img = T.functional.to_pil_image(black_img.clone().detach().cpu().reshape(H, W, 3).permute(2,1,0))
+        #     cc_img = T.functional.to_pil_image(cc.permute(2,0,1))
+
+        #     print('firstly the pose is ', i_img)
+        #     curr_img.save('highlighted.png')
+        #     black_img.save('black_img.png')
+        #     cc_img.save('gt.png')
+
+
+        #     import sys
+        #     sys.exit()
 
         if curr_iter == 0:
             print(f'render_kwargs_test: {render_kwargs_test}')
-        rgb, _, _ = render_fn(rays_o,
+        rgb, depth, extras = render_fn(rays_o,
                         -rays_d,
                         show_progress=False,
                         detailed_output=False,
                         **render_kwargs_test)
         
 
-        loss = F.mse_loss(rgb, gt_rgb.float())
+        loss = F.mse_loss(rgb.squeeze(), gt_rgb.float().squeeze())
         optimizer.zero_grad()
+        if curr_iter < 500:
+            # warmup learning rate
+            for param_group in optimizer.param_groups:
+                param_group['lr'] = float(curr_iter+1)/500 * config['training']['lr']
+                wandb.log({'train/lr': param_group['lr']}, step=curr_iter)
+        else:
+            for param_group in optimizer.param_groups:
+                param_group['lr'] = config['training']['lr'] * (0.999999**curr_iter)
+                wandb.log({'train/lr': param_group['lr']}, step=curr_iter)
+
+
         loss.backward()
         optimizer.step()
 
@@ -95,6 +170,9 @@ def render_val(config, model, render_kwargs_test, render_fn, pose, camera_params
     """
     def integerify(img):
         return (img * 255.0).astype(np.uint8)
+
+    if isinstance(pose, np.ndarray):
+        pose = torch.from_numpy(pose)
 
     # construct intrinsic matrix
     H, W, focal = camera_params
@@ -134,16 +212,25 @@ def render_val(config, model, render_kwargs_test, render_fn, pose, camera_params
             N_rays=-1
         )
 
-    # print(f'type of rays_o, rays_d: {type(rays_o), type(rays_d)}')
-    # print(f'rays_o.shape: {rays_o.shape}')
-    # print(f'rays_d.shape: {rays_d.shape}')
-    if args.debug:
-        print('saving rays as a point cloud with normals')
-        # furhter = rays_d * 10
-        points = torch.cat([rays_o+rays_d, rays_o + 4*rays_d], dim=1)
-        pcd = io_util.rays_to_pcd(points=points, normals=rays_d)
-        o3d.io.write_point_cloud('rays.ply', pcd)
-        print(rays_o)
+    if config['invert_z']:
+        rays_o = torch.matmul(torch.tensor([[1, 0, 0.],
+                                                [0, 1, 0.],
+                                                [0, 0, -1]], device=rays_o.device).unsqueeze(0),
+                                rays_o[..., None]).squeeze(-1) # (1x3x3) x (nx3x1) and squeeze
+
+        # rotate to invert z on the directions
+        rays_d = torch.matmul(torch.tensor([[1, 0, 0.],
+                                            [0, 1, 0.],
+                                            [0, 0, -1]], device=rays_d.device).unsqueeze(0),
+                                rays_d[..., None]).squeeze(-1) # (1x3x3) x (nx3x1) and squeeze
+
+    # if args.debug:
+    #     print('saving rays as a point cloud with normals')
+    #     # furhter = rays_d * 10
+    #     points = torch.cat([rays_o+rays_d, rays_o + 4*rays_d], dim=1)
+    #     pcd = io_util.rays_to_pcd(points=points, normals=rays_d)
+    #     o3d.io.write_point_cloud('rays.ply', pcd)
+    #     print(rays_o)
 
     with torch.no_grad():   
         rgb, _, _ = render_fn(
@@ -166,10 +253,12 @@ def render_val(config, model, render_kwargs_test, render_fn, pose, camera_params
 
         images = wandb.Image(img, caption="Validation Image")
         
-        print(type(images))
-        print(dir(images))
+        # print(type(images))
+        # print(dir(images))
           
         wandb.log({"val/images": images})
+
+        return img
 
 
 
@@ -179,6 +268,11 @@ if __name__ == '__main__':
     parser.add_argument('--debug', action='store_true')
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--half_res', action='store_true')
+    parser.add_argument('--just_render', action='store_true')
+    parser.add_argument('--render_path', type=str, default='renders')
+    parser.add_argument('--tags', type=str, default='')
+    parser.add_argument('--invert_z', action='store_true')
+    parser.add_argument('--notes', type=str, default='')
     args, unknown = parser.parse_known_args()
 
     config = io_util.load_config(args, {'exp_name': 'test'})
@@ -212,7 +306,7 @@ if __name__ == '__main__':
     # load the dataset
     # ------------------------------------------------------------------------------
     print(f'Loading dataset...')
-    imgs, poses, render_poses, camera_params, i_split = load_blender.load_blender_data(config['data']['data_dir'],
+    imgs, poses, render_poses, camera_params, i_split, fnames = load_blender.load_blender_data(config['data']['data_dir'],
                                                             half_res=args.half_res,
                                                             testskip=1,
                                                             splits=['train', 'test'])
@@ -229,10 +323,12 @@ if __name__ == '__main__':
             Train images: {len(i_split[0])}, \n\
             Test images: {len(i_split[1])}')
 
+    print(f'fnames[0] = {fnames[0]} and {i_split[0][0]} and {fnames[i_split[0][0]]}')
+
     # ------------------------------------------------------------------------------
     # setup experiments directory
     # ------------------------------------------------------------------------------
-    expt_prefix = io_util.gen_expt_prefix(debug=args.debug)
+    expt_prefix = io_util.gen_expt_prefix(debug=args.debug, render=args.just_render)
     full_expt_path = os.path.join('.', 'out', config['expname'], expt_prefix)
     print(f'Saving experiment to {full_expt_path}')
     print(f'Current experiment is {expt_prefix}')
@@ -246,7 +342,16 @@ if __name__ == '__main__':
     # ------------------------------------------------------------------------------
     # setup wandb
     # ------------------------------------------------------------------------------
-    curr_run = wandb.init(project=PROJECT, config=config, name=expt_prefix)
+    if args.tags:
+        tags = args.tags.split(',')
+    else:
+        tags = None
+    curr_run = wandb.init(project=PROJECT,
+                          config=config,
+                          name=expt_prefix,
+                          save_code=True,
+                          tags=tags,
+                          notes=args.notes)
     wandb.watch(model)
 
 
@@ -261,6 +366,18 @@ if __name__ == '__main__':
     # ------------------------------------------------------------------------------
     for curr_iter in trange(config['training']['num_iters']):
         # TODO: implement warmup
+
+        if args.just_render:
+            os.makedirs(args.render_path, exist_ok=True)
+            for ii in i_split[1]:
+                img = render_val(config, model, render_kwargs_test, render_fn, poses[i_split[1][ii]], camera_params)
+                save_path = os.path.join(args.render_path, f'{ii:05d}.png')
+                print(f'Saving image to {save_path}')
+                imageio.imwrite(save_path, np.squeeze(img))
+
+            wandb.finish()
+            import sys
+            sys.exit()
 
         curr_loss = train(config, curr_iter, model, optimizer, imgs, poses, render_poses, camera_params, i_split, render_kwargs_test, render_fn)
         wandb.log({"train/loss": curr_loss}, step=curr_iter)
@@ -289,7 +406,8 @@ if __name__ == '__main__':
         # ------------------------------------------------------------------------------
 
         if curr_iter % config['training']['i_render'] == 0:
-            render_val(config, model, render_kwargs_test, render_fn, poses[i_split[1][0]], camera_params)
+            render_pose = torch.from_numpy(poses[i_split[1][0]])
+            render_val(config, model, render_kwargs_test, render_fn, render_pose, camera_params)
 
     # ------------------------------------------------------------------------------
     # save final checkpoint

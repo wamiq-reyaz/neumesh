@@ -56,13 +56,15 @@ def rays_to_pcd(points=None, normals=None, color=None):
     return pc
 
 
-def gen_expt_prefix(debug=False):
+def gen_expt_prefix(debug=False, render=False):
     time_prefix = datetime.datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
     random_prefix = str(uuid.uuid4())[:8]
     if debug:
         prefix = 'debug_'
     else:
         prefix = ''
+    if render:
+        prefix += 'render_'
     return f"{prefix}{time_prefix}_{random_prefix}"
 
 
