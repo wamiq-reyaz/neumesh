@@ -21,13 +21,34 @@ import skimage
 from skimage.transform import rescale
 from natsort import natsorted
 
+import re
 
-def dir_to_video(path, fps=30):
-    imgs = glob_imgs(path)
+def re_glob(path, pattern):
+    """Glob with regex.
+
+    Args:
+        path (str): Path to search.
+        pattern (str): Regex pattern.
+
+    Returns:
+        list: List of files matching the pattern.
+    """
+    files = glob.glob(os.path.join(path, '*'))
+    pattern = r'.*' + pattern
+            
+    return [f for f in files if re.match(pattern, f)]
+
+
+def dir_to_video(path, fps=30, pattern=r'*.png', out_path=None):
+    imgs = re_glob(path, pattern)
     imgs = natsorted(imgs) # important because sometimes sort is not correct
-    print(imgs)
     imgs = [imageio.imread(img) for img in imgs]
-    video_path = os.path.join(path, "video.mp4")
+
+    if out_path is None:
+        video_path = os.path.join(path, 'video.mp4')
+    else:
+        video_path = os.path.join(out_path, "video.mp4")
+
     imageio.mimsave(video_path, imgs, fps=fps)
 
 def sanitize_for_o3d(x):

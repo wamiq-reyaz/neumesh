@@ -10,3 +10,5 @@ playground
 */*.ply
 env
 env/*
+*.png
+*.obj
