@@ -142,11 +142,19 @@ def train(config, curr_iter, model, optimizer, imgs, poses, render_poses, camera
         rgb, depth, extras = render_fn(rays_o,
                         -rays_d,
                         show_progress=False,
-                        detailed_output=False,
+                        detailed_output=True,
                         **render_kwargs_test)
         
 
         loss = F.mse_loss(rgb.squeeze(), gt_rgb.float().squeeze())
+        sdf = extras['implicit_nablas']
+        sdf_norm = torch.norm(sdf, dim=-1)
+        eikonal_loss = F.mse_loss(sdf_norm.squeeze(), torch.ones_like(sdf_norm).squeeze())
+
+        loss = loss + config['neumesh']['loss_weights']['eikonal'] * eikonal_loss
+
+        # eikonal loss
+
         optimizer.zero_grad()
         warmup_steps = config['training']['scheduler'].get('warmup_steps', 0)
         if (curr_iter < warmup_steps) and (warmup_steps > 0):
@@ -159,6 +167,7 @@ def train(config, curr_iter, model, optimizer, imgs, poses, render_poses, camera
                 param_group['lr'] = config['training']['lr'] * (0.999999**curr_iter)
                 wandb.log({'train/lr': param_group['lr']}, step=curr_iter)
 
+        wandb.log({'train/eikonal_loss': eikonal_loss.item()}, step=curr_iter)
 
         loss.backward()
         optimizer.step()
@@ -247,9 +256,11 @@ def render_val(config, model, render_kwargs_test, render_fn, pose, camera_params
         print(rgb.shape)
         print(torch.unique(rgb))
         rgb = rgb.reshape(H, W, 3).unsqueeze(0)
-
         img = integerify(rgb.cpu().numpy())
-        mask_volume = extras['mask_volume'].cpu().numpy()
+
+        mask_volume = extras['mask_volume'].cpu()
+        mask_volume = mask_volume.reshape(H, W).unsqueeze(0).numpy()
+
 
 
         images = wandb.Image(img, caption="Validation Image")
