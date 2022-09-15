@@ -52,6 +52,9 @@ def train(config, curr_iter, model, optimizer, imgs, poses, render_poses, camera
     if config['training'].get('sampling', 'rays_per_image') == 'rays_per_image':
         # choose an image and sample points and rays on that image
         i_img = random.choice(i_split[0]) 
+
+        if config['training'].get('overfit', False):
+            i_img = i_split[1][184]
         # print(i_split)
         # print(len(i_split[0]), len(i_split[1]))
         # i_img = i_split[0][0]
@@ -418,6 +421,8 @@ if __name__ == '__main__':
         
         if curr_iter % config['training']['i_render'] == 0:
             render_pose = torch.from_numpy(poses[i_split[1][0]])
+            if config['training'].get('overfit', False):
+                render_pose = torch.from_numpy(poses[i_split[1][184]])
             render_val(config, model, render_kwargs_test, render_fn, render_pose, camera_params)
 
     # ------------------------------------------------------------------------------
