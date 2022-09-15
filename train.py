@@ -148,10 +148,11 @@ def train(config, curr_iter, model, optimizer, imgs, poses, render_poses, camera
 
         loss = F.mse_loss(rgb.squeeze(), gt_rgb.float().squeeze())
         optimizer.zero_grad()
-        if curr_iter < 500:
+        warmup_steps = config['training']['scheduler'].get('warmup_steps', 0)
+        if (curr_iter < warmup_steps) and (warmup_steps > 0):
             # warmup learning rate
             for param_group in optimizer.param_groups:
-                param_group['lr'] = float(curr_iter+1)/500 * config['training']['lr']
+                param_group['lr'] = float(curr_iter+1)/warmup_steps * config['training']['lr']
                 wandb.log({'train/lr': param_group['lr']}, step=curr_iter)
         else:
             for param_group in optimizer.param_groups:
