@@ -40,7 +40,7 @@ model:
     multires_fg: 2
     multires_ft: 2
     multires_view: 4
-  obj_bounding_radius: 1.0 # sheep is probably larger
+  obj_bounding_radius: 1.5  # sheep is probably larger
   radiance:
     D: 4
     W: 256
