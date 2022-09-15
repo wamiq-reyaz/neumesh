@@ -234,7 +234,7 @@ def render_val(config, model, render_kwargs_test, render_fn, pose, camera_params
     #     print(rays_o)
 
     with torch.no_grad():   
-        rgb, _, _ = render_fn(
+        rgb, _, extras = render_fn(
             rays_o,
             -rays_d,
             show_progress=False,
@@ -249,7 +249,7 @@ def render_val(config, model, render_kwargs_test, render_fn, pose, camera_params
         rgb = rgb.reshape(H, W, 3).unsqueeze(0)
 
         img = integerify(rgb.cpu().numpy())
-
+        mask_volume = extras['mask_volume'].cpu().numpy()
 
 
         images = wandb.Image(img, caption="Validation Image")
@@ -259,7 +259,7 @@ def render_val(config, model, render_kwargs_test, render_fn, pose, camera_params
           
         wandb.log({"val/images": images})
 
-    return img
+    return img, mask_volume
 
 
 
@@ -312,6 +312,12 @@ if __name__ == '__main__':
                                                             half_res=args.half_res,
                                                             testskip=1,
                                                             splits=['train', 'test'])
+
+    # print(f'Splits are as follows:')
+    # print(f'Train: {i_split[0]}')
+    # print(f'Test: {i_split[1]}')
+    # import sys
+    # sys.exit()
 
     # print(np.min(imgs), np.max(imgs))
     # import sys
@@ -372,10 +378,17 @@ if __name__ == '__main__':
         if args.just_render:
             os.makedirs(args.render_path, exist_ok=True)
             for ii in i_split[1]:
-                img = render_val(config, model, render_kwargs_test, render_fn, poses[i_split[1][ii]], camera_params)
+                img, mask_volume = render_val(config, model, render_kwargs_test, render_fn, poses[ii], camera_params)
+                # save the rgb
                 save_path = os.path.join(args.render_path, f'{ii:05d}.png')
                 print(f'Saving image to {save_path}')
                 imageio.imwrite(save_path, np.squeeze(img))
+
+                # save the mask volume
+                save_path = os.path.join(args.render_path, f'volume_{ii:05d}.png')
+                print(f'Saving volume to {save_path}')
+                imageio.imwrite(save_path, np.squeeze(mask_volume))
+
 
             wandb.finish()
             import sys

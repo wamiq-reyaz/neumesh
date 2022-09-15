@@ -19,7 +19,16 @@ import open3d as o3d
 import torch
 import skimage
 from skimage.transform import rescale
+from natsort import natsorted
 
+
+def dir_to_video(path, fps=30):
+    imgs = glob_imgs(path)
+    imgs = natsorted(imgs) # important because sometimes sort is not correct
+    print(imgs)
+    imgs = [imageio.imread(img) for img in imgs]
+    video_path = os.path.join(path, "video.mp4")
+    imageio.mimsave(video_path, imgs, fps=fps)
 
 def sanitize_for_o3d(x):
     if isinstance(x, torch.Tensor):
