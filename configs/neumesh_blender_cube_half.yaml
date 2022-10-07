@@ -2,26 +2,27 @@ data:
   N_rays: 512
   batch_size: 1
   cam_file: cameras_sphere.npz
-  data_dir: /mnt/datawaha/datasets/editable_nerf/blender_cube
+  data_dir: /datawaha/cggroup/parawr/datasets/editable_nerf/blender_cube
   downscale: 1
   pin_memory: true
   split: train
   type: DTU
   val_downscale: 1
   val_rayschunk: 16384
+  obj_bounding_radius: 2
 device_ids:
 - 0
 expname: blender_sheep
 neumesh:
   N_samples: 100000
-  batch_size: 512
+  batch_size: 2048
   distance_method: frnn
   dump_samples: false
   input_xyz: false
   learn_indicator_vector: true
   loss_weights:
-    eikonal: 1.0
-  prior_mesh: /mnt/datawaha/datasets/editable_nerf/blender_cube/cube_triangulated.ply
+    eikonal: 0.001
+  prior_mesh: /datawaha/cggroup/parawr/datasets/editable_nerf/blender_cube/cube_triangulated.ply
   training_type: null
   union_training: true
   val_sampleschunk: 5000
@@ -57,6 +58,7 @@ model:
   variance_init: 0.05
   white_bkgd: false
 training:
+  overfit: true
   ckpt_file: null
   ckpt_ignore_keys: []
   ckpt_only_use_keys: null

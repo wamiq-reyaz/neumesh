@@ -29,6 +29,7 @@ import json
 
 
 PROJECT = 'editable_nerf'
+HACKY_ITER_COUNT = 0
 
 def integerify(img):
     return (img * 255.0).astype(np.uint8)
@@ -52,9 +53,11 @@ def train(config, curr_iter, model, optimizer, imgs, poses, render_poses, camera
     if config['training'].get('sampling', 'rays_per_image') == 'rays_per_image':
         # choose an image and sample points and rays on that image
         i_img = random.choice(i_split[0]) 
+        # print(i_img)
 
-        if config['training'].get('overfit', False):
-            i_img = i_split[1][184]
+        # if config['training'].get('overfit', False):
+        #     i_img = random.choice([i_split[1][kk] for kk in range(38,48)])
+            # i_img = random.choice([i_split[1][184], i_split[1][62]])
         # print(i_split)
         # print(len(i_split[0]), len(i_split[1]))
         # i_img = i_split[0][0]
@@ -74,16 +77,19 @@ def train(config, curr_iter, model, optimizer, imgs, poses, render_poses, camera
         # print(rays_o.shape, rays_d.shape)
 
         # invert z
+        # [[0, 1., 0.],
+        # [0, 0, 1.],
+        # [-1, 0, 0]]
         if config['invert_z']:
             rays_o = torch.matmul(torch.tensor([[1, 0, 0.],
-                                                [0, 1, 0.],
-                                                [0, 0, -1]], device=rays_o.device).unsqueeze(0),
+                                            [0, 1, 0.],
+                                            [0, 0, -1]], device=rays_o.device).unsqueeze(0),
                                 rays_o[..., None]).squeeze(-1) # (1x3x3) x (nx3x1) and squeeze
 
             # rotate to invert z on the directions
             rays_d = torch.matmul(torch.tensor([[1, 0, 0.],
-                                                [0, 1, 0.],
-                                                [0, 0, -1]], device=rays_d.device).unsqueeze(0),
+                                            [0, 1, 0.],
+                                            [0, 0, -1]], device=rays_d.device).unsqueeze(0),
                                 rays_d[..., None]).squeeze(-1) # (1x3x3) x (nx3x1) and squeeze
 
         # print(rays_o.shape, rays_d.shape)
@@ -99,7 +105,12 @@ def train(config, curr_iter, model, optimizer, imgs, poses, render_poses, camera
         selected_idx = selected_idx.squeeze(0) # N
         # print(f'selected idx.shape {selected_idx.shape}')
         curr_img = curr_img[..., :3] # HxWx3 drop alpha
-        # curr_img = curr_img.permute(1,0,2)
+
+        if config['invert_z'] and config.get('invert_z_gt', False):
+            curr_img = curr_img[:, ::-1, :] # left-right flip
+
+        curr_img = curr_img.flip((1,)) # left-right flip
+
         cc = curr_img.clone().detach().cpu()
         curr_img = curr_img.reshape(-1, 3) # HxWx3 -> (HxW)x3
 
@@ -205,18 +216,6 @@ def render_val(config, model, render_kwargs_test, render_fn, pose, camera_params
         [0, 0, 0, 1]
         ]).astype(np.float32)
 
-    # intrinsics = np.array(
-    #    [[ 2.8923e+03, -2.6210e-04,  8.2321e+02,  0.0000e+00],
-    #     [ 0.0000e+00,  2.8832e+03,  6.1907e+02,  0.0000e+00],
-    #     [ 0.0000e+00,  0.0000e+00,  1.0000e+00,  0.0000e+00],
-    #     [ 0.0000e+00,  0.0000e+00,  0.0000e+00,  1.0000e+00]]
-    # ).astype(np.float32)
-
-    # pose = torch.tensor([[ 0.23530716,  0.33113482, -0.91377255,  4.78497434],
-    #         [-0.77687748,  0.62903356,  0.02789544 , 0.09405055],
-    #         [ 0.58403075,  0.70332532 , 0.40526728 ,-2.25775732],
-    #         [ 0. ,         0.      ,    0.  ,        1.        ]])
-
     rays_o, rays_d, _ = rend_util.get_rays(
             pose.float().unsqueeze(0).cuda(),
             torch.from_numpy(intrinsics).unsqueeze(0),
@@ -227,8 +226,8 @@ def render_val(config, model, render_kwargs_test, render_fn, pose, camera_params
 
     if config['invert_z']:
         rays_o = torch.matmul(torch.tensor([[1, 0, 0.],
-                                                [0, 1, 0.],
-                                                [0, 0, -1]], device=rays_o.device).unsqueeze(0),
+                                            [0, 1, 0.],
+                                            [0, 0, -1]], device=rays_o.device).unsqueeze(0),
                                 rays_o[..., None]).squeeze(-1) # (1x3x3) x (nx3x1) and squeeze
 
         # rotate to invert z on the directions
@@ -237,13 +236,14 @@ def render_val(config, model, render_kwargs_test, render_fn, pose, camera_params
                                             [0, 0, -1]], device=rays_d.device).unsqueeze(0),
                                 rays_d[..., None]).squeeze(-1) # (1x3x3) x (nx3x1) and squeeze
 
-    # if args.debug:
-    #     print('saving rays as a point cloud with normals')
-    #     # furhter = rays_d * 10
-    #     points = torch.cat([rays_o+rays_d, rays_o + 4*rays_d], dim=1)
-    #     pcd = io_util.rays_to_pcd(points=points, normals=rays_d)
-    #     o3d.io.write_point_cloud('rays.ply', pcd)
-    #     print(rays_o)
+    global HACKY_ITER_COUNT
+    if args.debug and (HACKY_ITER_COUNT == 5):
+        print('saving rays as a point cloud with normals')
+        points = torch.cat([rays_o-rays_d, rays_o - 4*rays_d], dim=1)
+        pcd = io_util.rays_to_pcd(points=points, normals=rays_d)
+        o3d.io.write_point_cloud(f'rays_tex_2{HACKY_ITER_COUNT:04d}.ply', pcd)
+        print(f'Saved rays to rays.ply')
+    HACKY_ITER_COUNT += 1
 
     with torch.no_grad():   
         rgb, _, extras = render_fn(
@@ -253,11 +253,11 @@ def render_val(config, model, render_kwargs_test, render_fn, pose, camera_params
             detailed_output=False,
             **render_kwargs_test
         )
-        print('=' * 10)
-        print('printing rendered info')
-        print(type(rgb))
-        print(rgb.shape)
-        print(torch.unique(rgb))
+        # print('=' * 10)
+        # print('printing rendered info')
+        # print(type(rgb))
+        # print(rgb.shape)
+        # print(torch.unique(rgb))
         rgb = rgb.reshape(H, W, 3).unsqueeze(0)
         img = integerify(rgb.cpu().numpy())
 
@@ -431,9 +431,13 @@ if __name__ == '__main__':
         # ------------------------------------------------------------------------------
         
         if curr_iter % config['training']['i_render'] == 0:
-            render_pose = torch.from_numpy(poses[i_split[1][0]])
-            if config['training'].get('overfit', False):
-                render_pose = torch.from_numpy(poses[i_split[1][184]])
+            # render_pose = torch.from_numpy(poses[i_split[1][0]])
+            pose_to_render = random.choice(i_split[1])
+
+            # if config['training'].get('overfit', False):
+            #     pose_to_render = random.choice([i_split[1][kk] for kk in range(38,48)])
+                # pose_to_render = random.choice([i_split[1][184], i_split[1][62]])
+            render_pose = torch.from_numpy(poses[pose_to_render])
             render_val(config, model, render_kwargs_test, render_fn, render_pose, camera_params)
 
     # ------------------------------------------------------------------------------

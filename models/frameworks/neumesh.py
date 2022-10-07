@@ -960,7 +960,7 @@ def get_neumesh_model(args):
         render_kwargs_test["calc_normal"] = True
 
     render_kwargs_test["rayschunk"] = args.data.val_rayschunk
-    render_kwargs_test["perturb"] = False
+    render_kwargs_test["perturb"] = True
 
     model = NeuMesh(mesh_sampler, args.neumesh.input_xyz, **model_config)
 

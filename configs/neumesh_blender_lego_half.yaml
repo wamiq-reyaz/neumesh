@@ -2,13 +2,14 @@ data:
   N_rays: 512
   batch_size: 1
   cam_file: cameras_sphere.npz
-  data_dir: /home/parawr/Projects/adobe/neumesh/data/nerf_synthetic/chair
+  data_dir: /datawaha/cggroup/parawr/Projects/adobe/neumesh/data/editable_nerf/nerf_synthetic/chair
   downscale: 1
   pin_memory: true
   split: train
   type: DTU
   val_downscale: 1
   val_rayschunk: 16384
+  obj_bounding_radius: 2
 device_ids:
 - 0
 expname: blender_sheep
@@ -20,8 +21,8 @@ neumesh:
   input_xyz: false
   learn_indicator_vector: true
   loss_weights:
-    eikonal: 1.0
-  prior_mesh: /home/parawr/Projects/adobe/neumesh/data/nerf_synthetic/chair/chair_triangulated.ply
+    eikonal: 0.001
+  prior_mesh: /datawaha/cggroup/parawr/Projects/adobe/neumesh/data/editable_nerf/nerf_synthetic/chair/chair_triangulated_fixedrot.obj
   # prior_mesh: /home/parawr/Projects/adobe/neumesh/meshes/teacher/dtu_scan63/dtu_scan63.ply
   training_type: null
   union_training: true
@@ -40,7 +41,7 @@ model:
     multires_fg: 2
     multires_ft: 2
     multires_view: 4
-  obj_bounding_radius: 6 # sheep is probably larger
+  obj_bounding_radius: 3 # sheep is probably larger
   radiance:
     D: 4
     W: 256
@@ -51,13 +52,14 @@ model:
     D: 8
     W: 256
     embed_multires: 6
-    radius_init: 0.5
+    radius_init: 2
     skips:
     - 4
   upsample_algo: official_solution
   variance_init: 0.05
-  white_bkgd: true
+  white_bkgd: false
 training:
+  overfit: True
   ckpt_file: null
   ckpt_ignore_keys: []
   ckpt_only_use_keys: null
