@@ -53,14 +53,7 @@ def train(config, curr_iter, model, optimizer, imgs, poses, render_poses, camera
     if config['training'].get('sampling', 'rays_per_image') == 'rays_per_image':
         # choose an image and sample points and rays on that image
         i_img = random.choice(i_split[0]) 
-        # print(i_img)
 
-        # if config['training'].get('overfit', False):
-        #     i_img = random.choice([i_split[1][kk] for kk in range(38,48)])
-            # i_img = random.choice([i_split[1][184], i_split[1][62]])
-        # print(i_split)
-        # print(len(i_split[0]), len(i_split[1]))
-        # i_img = i_split[0][0]
         curr_img = imgs[i_img] # HxWx4
         curr_pose = poses[i_img] # 4x4
         curr_img = torch.from_numpy(curr_img).cuda() # HxWx4
@@ -74,12 +67,7 @@ def train(config, curr_iter, model, optimizer, imgs, poses, render_poses, camera
             config['data']['N_rays']
         )
 
-        # print(rays_o.shape, rays_d.shape)
 
-        # invert z
-        # [[0, 1., 0.],
-        # [0, 0, 1.],
-        # [-1, 0, 0]]
         if config['invert_z']:
             rays_o = torch.matmul(torch.tensor([[1, 0, 0.],
                                             [0, 1, 0.],
@@ -92,18 +80,9 @@ def train(config, curr_iter, model, optimizer, imgs, poses, render_poses, camera
                                             [0, 0, -1]], device=rays_d.device).unsqueeze(0),
                                 rays_d[..., None]).squeeze(-1) # (1x3x3) x (nx3x1) and squeeze
 
-        # print(rays_o.shape, rays_d.shape)
 
-
-        # rays_o: 1xNx3, rays_d: 1xNx3, selected_idx: 1xN
-        # curr_img: HxWx4
-
-        # print(f'rays_o: {rays_o.shape}, rays_d: {rays_d.shape}, selected_idx: {selected_idx.shape}')
-        # print(f'devices: rays_o: {rays_o.device}, rays_d: {rays_d.device}, selected_idx: {selected_idx.device}')
-        # print(f'image device: {curr_img.device}')
         # sample GT RGB values
         selected_idx = selected_idx.squeeze(0) # N
-        # print(f'selected idx.shape {selected_idx.shape}')
         curr_img = curr_img[..., :3] # HxWx3 drop alpha
 
         if config['invert_z'] and config.get('invert_z_gt', False):
@@ -111,45 +90,9 @@ def train(config, curr_iter, model, optimizer, imgs, poses, render_poses, camera
 
         curr_img = curr_img.flip((1,)) # left-right flip
 
-        cc = curr_img.clone().detach().cpu()
         curr_img = curr_img.reshape(-1, 3) # HxWx3 -> (HxW)x3
 
         gt_rgb = curr_img[selected_idx] # Nx3
-
-
-        # if args.debug:
-        #     print('saving rays as a point cloud with normals')
-        #     # furhter = rays_d * 10
-        #     points = torch.cat([rays_o, rays_o - 4*rays_d], dim=1)
-        #     pcd = io_util.rays_to_pcd(points=points, normals=rays_d)
-        #     o3d.io.write_point_cloud('rays_partial.ply', pcd)
-
-
-        #     points = torch.cat([-rays_o, -rays_o + 4*rays_d], dim=1)
-        #     pcd = io_util.rays_to_pcd(points=points, normals=rays_d)
-        #     o3d.io.write_point_cloud('rays_partial_inverted.ply', pcd)
-
-        #     points = torch.cat([rays_o, rays_o + 4*rays_d], dim=1)
-        #     pcd = io_util.rays_to_pcd(points=points, normals=rays_d)
-        #     o3d.io.write_point_cloud('rays_rotated.ply', pcd)
-
-        #     curr_img[selected_idx] = 1 # turn everything white
-
-        #     black_img = torch.zeros((H*W, 3)).cuda()
-        #     black_img[selected_idx] = 1
-
-        #     curr_img = T.functional.to_pil_image(curr_img.clone().detach().cpu().reshape(H, W, 3).permute(2,0,1))
-        #     black_img = T.functional.to_pil_image(black_img.clone().detach().cpu().reshape(H, W, 3).permute(2,1,0))
-        #     cc_img = T.functional.to_pil_image(cc.permute(2,0,1))
-
-        #     print('firstly the pose is ', i_img)
-        #     curr_img.save('highlighted.png')
-        #     black_img.save('black_img.png')
-        #     cc_img.save('gt.png')
-
-
-        #     import sys
-        #     sys.exit()
 
         if curr_iter == 0:
             print(f'render_kwargs_test: {render_kwargs_test}')
@@ -253,24 +196,15 @@ def render_val(config, model, render_kwargs_test, render_fn, pose, camera_params
             detailed_output=False,
             **render_kwargs_test
         )
-        # print('=' * 10)
-        # print('printing rendered info')
-        # print(type(rgb))
-        # print(rgb.shape)
-        # print(torch.unique(rgb))
+
         rgb = rgb.reshape(H, W, 3).unsqueeze(0)
         img = integerify(rgb.cpu().numpy())
 
         mask_volume = extras['mask_volume'].cpu()
         mask_volume = mask_volume.reshape(H, W).unsqueeze(0).numpy()
 
-
-
         images = wandb.Image(img, caption="Validation Image")
         
-        # print(type(images))
-        # print(dir(images))
-          
         wandb.log({"val/images": images})
 
     return img, mask_volume
@@ -327,15 +261,6 @@ if __name__ == '__main__':
                                                             testskip=1,
                                                             splits=['train', 'test'])
 
-    # print(f'Splits are as follows:')
-    # print(f'Train: {i_split[0]}')
-    # print(f'Test: {i_split[1]}')
-    # import sys
-    # sys.exit()
-
-    # print(np.min(imgs), np.max(imgs))
-    # import sys
-    # sys.exit()
     
     print(f'Loaded dataset: \n\
             Images: {imgs.shape},\n\
@@ -431,12 +356,7 @@ if __name__ == '__main__':
         # ------------------------------------------------------------------------------
         
         if curr_iter % config['training']['i_render'] == 0:
-            # render_pose = torch.from_numpy(poses[i_split[1][0]])
             pose_to_render = random.choice(i_split[1])
-
-            # if config['training'].get('overfit', False):
-            #     pose_to_render = random.choice([i_split[1][kk] for kk in range(38,48)])
-                # pose_to_render = random.choice([i_split[1][184], i_split[1][62]])
             render_pose = torch.from_numpy(poses[pose_to_render])
             render_val(config, model, render_kwargs_test, render_fn, render_pose, camera_params)
 
@@ -469,108 +389,3 @@ if __name__ == '__main__':
     print(f'Finished training {expt_prefix}')
 
     # ------------------------------------------------------------------------------
-
-    
-
-
-
-
-
-# if __name__ == '__main__':
-#     parser = io_util.create_args_parser()
-#     parser = create_render_args(parser)
-#     args, unknown = parser.parse_known_args()
-#     config = io_util.load_config(args, unknown)
-
-#     pretty_config = json.dumps(config, indent=4)
-#     print(pretty_config)
-
-
-#     ## debug the loader
-
-#     # sheep dataset 
-#     imgs, poses, render_poses, camera_params, i_split = load_blender.load_blender_data(config['data']['data_dir'],
-#                                                             half_res=False,
-#                                                             testskip=1,
-#                                                             splits=['train', 'test'])
-
-#     # lego dataset
-#     imgs, poses, render_poses, camera_params, i_split = load_blender.load_blender_data('/home/parawr/Projects/instant-ngp/data/nerf/nerf_synthetic/lego',
-#                                                         half_res=False,
-#                                                         testskip=1,
-#                                                         splits=['train', 'test'])
-
-
-#     # ------------
-#     #  do the images look alright
-#     # ------------
-
-#     import matplotlib.pyplot as plt
-#     plt.imshow(imgs[0])
-#     # plt.show()
-#     plt.savefig('playground/train/img_lego_train_0.png')
-
-#     # ------------
-#     #  can you generate rays from the poses and render them?
-#     # ------------
-
-#     # perhaps use load_K_Rt_from_P from utils/rend_util
-#     # decompose_blender_mat_to_K_Rt(pose)
-#     def decompose_blender_mat_to_intrinsics_pose(pose_4x4):
-#         p = pose_4x4[:3, :]
-#         intrinsics, pose = rend_util.load_K_Rt_from_P(p)
-
-#         return intrinsics, pose
-        
-#     intrinsics, pose = decompose_blender_mat_to_intrinsics_pose(poses[0])
-
-#     print('Intrinsics', intrinsics)
-#     print('Pose', pose)
-#     print('full_mat', poses[0])
-
-#     print('lalalala')
-
-
-#     # check if pose has valid rotation matrix
-#     rot_matrix = pose[:3, :3]
-#     print('rot_matrix', rot_matrix)
-#     print('det', np.linalg.det(rot_matrix))
-
-#     ## can you generate rays from the poses and render them?
-
-#     # Checks if a matrix is a valid rotation matrix.
-#     def isRotationMatrix(R) :
-#         Rt = np.transpose(R)
-#         shouldBeIdentity = np.dot(Rt, R)
-#         I = np.identity(3, dtype = R.dtype)
-#         n = np.linalg.norm(I - shouldBeIdentity)
-#         return n < 1e-6
-
-#     import math
-
-#     # Calculates rotation matrix to euler angles
-#     # The result is the same as MATLAB except the order
-#     # of the euler angles ( x and z are swapped ).
-#     def rotationMatrixToEulerAngles(R) :
-
-#         assert(isRotationMatrix(R))
-
-#         sy = math.sqrt(R[0,0] * R[0,0] +  R[1,0] * R[1,0])
-
-#         singular = sy < 1e-6
-
-#         if  not singular :
-#             x = math.atan2(R[2,1] , R[2,2])
-#             y = math.atan2(-R[2,0], sy)
-#             z = math.atan2(R[1,0], R[0,0])
-#         else :
-#             x = math.atan2(-R[1,2], R[1,1])
-#             y = math.atan2(-R[2,0], sy)
-#             z = 0
-
-#         return np.array([x, y, z])
-
-
-#     # output the result as euler angle to visually confirm results
-#     print('euler angles', rotationMatrixToEulerAngles(rot_matrix.T))
-#     print('H W focal', camera_params)

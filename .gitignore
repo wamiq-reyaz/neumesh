@@ -1,14 +1,22 @@
+# python
 .vscode
 *__pycache__
+
+# data
 out
 data/*
 FRNN
 checkpoints
 wandb
 playground
-*.ply
-*/*.ply
+
+# conda
 env
 env/*
+
+# media
+*.ply
+*/*.ply
 *.png
 *.obj
+*.mp4
