@@ -10,6 +10,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import random
 import torchvision.transforms as T
+from contextlib import nullcontext
 
 
 
@@ -135,6 +136,7 @@ def train(config, curr_iter, model, optimizer, imgs, poses, render_poses, camera
 def val(config, curr_iter, model, optimizer, imgs, poses, render_poses, camera_params, i_split, render_kwargs_test, render_fn):
     return None, None
 
+@torch.no_grad()
 def render_val(config, model, render_kwargs_test, render_fn, pose, camera_params):
     """ reimplementation of render_function in render.py
     """
@@ -188,7 +190,8 @@ def render_val(config, model, render_kwargs_test, render_fn, pose, camera_params
         print(f'Saved rays to rays.ply')
     HACKY_ITER_COUNT += 1
 
-    with torch.no_grad():   
+    context = torch.cuda.amp.autocast() if config['use_autocast'] else nullcontext()
+    with context:
         rgb, _, extras = render_fn(
             rays_o,
             -rays_d,
@@ -197,15 +200,15 @@ def render_val(config, model, render_kwargs_test, render_fn, pose, camera_params
             **render_kwargs_test
         )
 
-        rgb = rgb.reshape(H, W, 3).unsqueeze(0)
-        img = integerify(rgb.cpu().numpy())
+    rgb = rgb.reshape(H, W, 3).unsqueeze(0).float()
+    img = integerify(rgb.cpu().numpy())
 
-        mask_volume = extras['mask_volume'].cpu()
-        mask_volume = mask_volume.reshape(H, W).unsqueeze(0).numpy()
+    mask_volume = extras['mask_volume'].cpu()
+    mask_volume = mask_volume.reshape(H, W).unsqueeze(0).float().numpy()
 
-        images = wandb.Image(img, caption="Validation Image")
-        
-        wandb.log({"val/images": images})
+    images = wandb.Image(img, caption="Validation Image")
+    
+    wandb.log({"val/images": images})
 
     return img, mask_volume
 
@@ -222,6 +225,7 @@ if __name__ == '__main__':
     parser.add_argument('--tags', type=str, default='')
     parser.add_argument('--invert_z', action='store_true')
     parser.add_argument('--notes', type=str, default='')
+    parser.add_argument('--fp16', '--mixed-precision', action='store_true',)
     args, unknown = parser.parse_known_args()
     
 

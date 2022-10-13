@@ -40,7 +40,18 @@ def create_triangle_matrix_from_faces(vertices, faces):
 @torch.no_grad()
 def main(args):
     # first load the mesh
-    mesh = trim.load(args.mesh_path, process=False)
+    file_ext = os.path.splitext(args.mesh_path)[-1]
+    if file_ext == '.obj':
+        with open(args.mesh_path, 'r') as fd:
+            mesh_dict = trim.exchange.obj.load_obj(fd, maintain_order=True, skip_materials=True)
+            # print(mesh_dict.keys())
+            mesh = trim.Trimesh(**mesh_dict)
+    elif file_ext == '.ply':
+        with open(args.mesh_path, 'rb') as fd:
+            mesh_dict = trim.exchange.ply.load_ply(fd)
+            mesh = trim.Trimesh(**mesh_dict)
+        
+    # mesh = trim.load(args.mesh_path, process=False)
     n_verts = mesh.vertices.shape[0]
     print('Mesh details:')
     print(mesh)
@@ -120,12 +131,14 @@ def main(args):
 
         is_hit_mask = np.reshape(is_hit_mask, (H,W))
         is_hit_mask = is_hit_mask[:, ::-1]
+        
 
 
         torch.save({'vert_idx_img':vert_idx,
                     'bary_img':bary_img,
                     'is_hit_mask':is_hit_mask,
-                    'img': curr_img},
+                    'img': curr_img,
+                    'view_dir':-rays_d},
                 os.path.join(args.train_folder, f'r_{i}.pth'))
 
     for i in tqdm(i_split[1]):
@@ -185,7 +198,8 @@ def main(args):
                     'bary_img':bary_img,
                     'is_hit_mask':is_hit_mask,
                     'img': curr_img,
-                    'n_verts': n_verts},
+                    'n_verts': n_verts,
+                    'view_dir':-rays_d},
                 os.path.join(args.test_folder, f'r_{i}.pth'))
 
 
