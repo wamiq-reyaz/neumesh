@@ -18,7 +18,7 @@ curr_file_path = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(os.path.join(curr_file_path, ".."))
 from utils import rend_util as ru
 from dataio import load_blender
-
+import pickle
 
 # TODO: load a mesh
 # generate a bunch of rays from view points
@@ -45,6 +45,8 @@ def main(args):
         with open(args.mesh_path, 'r') as fd:
             mesh_dict = trim.exchange.obj.load_obj(fd, maintain_order=True, skip_materials=True)
             # print(mesh_dict.keys())
+            if args.offset:
+                mesh_dict['vertices'] = mesh_dict['vertices'] + args.offset_value * mesh_dict['vertex_normals']
             mesh = trim.Trimesh(**mesh_dict)
     elif file_ext == '.ply':
         with open(args.mesh_path, 'rb') as fd:
@@ -193,7 +195,7 @@ def main(args):
         is_hit_mask = np.reshape(is_hit_mask, (H,W))
         is_hit_mask = is_hit_mask[:, ::-1]
 
-
+                        
         torch.save({'vert_idx_img':vert_idx,
                     'bary_img':bary_img,
                     'is_hit_mask':is_hit_mask,
@@ -222,6 +224,11 @@ if __name__ == "__main__":
     parser.add_argument('--height', '-he', type=int,
         default=800,
         help='height of rendered image')
+    parser.add_argument('--offset_value', type=float,
+        default=0.0,
+        help='offset of mesh')
+    parser.add_argument('--offset', action='store_true',
+        help='offset of mesh')
 
 
     args, unkown = parser.parse_known_args()
