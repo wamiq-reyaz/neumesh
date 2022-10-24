@@ -39,15 +39,15 @@ def re_glob(path, pattern):
     return [f for f in files if re.match(pattern, f)]
 
 
-def dir_to_video(path, fps=30, pattern=r'*.png', out_path=None):
+def dir_to_video(path, fps=30, pattern=r'*.png', out_path=None, out_name='video.mp4'):
     imgs = re_glob(path, pattern)
     imgs = natsorted(imgs) # important because sometimes sort is not correct
     imgs = [imageio.imread(img) for img in imgs]
 
     if out_path is None:
-        video_path = os.path.join(path, 'video.mp4')
+        video_path = os.path.join(path, out_name)
     else:
-        video_path = os.path.join(out_path, "video.mp4")
+        video_path = os.path.join(out_path, out_name)
 
     imageio.mimsave(video_path, imgs, fps=fps)
 
