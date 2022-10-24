@@ -17,7 +17,7 @@ from contextlib import nullcontext
 from utils import io_util, rend_util
 from utils.checkpoints import sorted_ckpts
 from utils.dist_util import set_seed
-
+from utils.metric_util import psnr, ssim
 from dataio import get_data, load_blender
 
 from models.frameworks.neumesh import get_neumesh_model
@@ -105,6 +105,9 @@ def train(config, curr_iter, model, optimizer, imgs, poses, render_poses, camera
         
 
         loss = F.mse_loss(rgb.squeeze(), gt_rgb.float().squeeze())
+        with torch.no_grad():
+            curr_pnsr = psnr(rgb.squeeze(), gt_rgb.float().squeeze())
+
         sdf = extras['implicit_nablas']
         sdf_norm = torch.norm(sdf, dim=-1)
         eikonal_loss = F.mse_loss(sdf_norm.squeeze(), torch.ones_like(sdf_norm).squeeze())
@@ -119,18 +122,22 @@ def train(config, curr_iter, model, optimizer, imgs, poses, render_poses, camera
             # warmup learning rate
             for param_group in optimizer.param_groups:
                 param_group['lr'] = float(curr_iter+1)/warmup_steps * config['training']['lr']
-                wandb.log({'train/lr': param_group['lr']}, step=curr_iter)
+                # wandb.log({'train/lr': param_group['lr']}, step=curr_iter)
         else:
             for param_group in optimizer.param_groups:
                 param_group['lr'] = config['training']['lr'] * (0.999999**curr_iter)
-                wandb.log({'train/lr': param_group['lr']}, step=curr_iter)
+                # wandb.log({'train/lr': param_group['lr']}, step=curr_iter)
 
-        wandb.log({'train/eikonal_loss': eikonal_loss.item()}, step=curr_iter)
+        ret_dict = dict()
+        ret_dict['loss'] = loss.item()
+        ret_dict['eikonal_loss'] = eikonal_loss.item()
+        ret_dict['lr'] = param_group['lr']
+        ret_dict['psnr'] = curr_pnsr
 
         loss.backward()
         optimizer.step()
 
-        return loss.clone().detach().cpu().numpy()
+        return ret_dict
         
 
 def val(config, curr_iter, model, optimizer, imgs, poses, render_poses, camera_params, i_split, render_kwargs_test, render_fn):
@@ -190,7 +197,7 @@ def render_val(config, model, render_kwargs_test, render_fn, pose, camera_params
         print(f'Saved rays to rays.ply')
     HACKY_ITER_COUNT += 1
 
-    context = torch.cuda.amp.autocast() if config['use_autocast'] else nullcontext()
+    context = torch.cuda.amp.autocast() if config['fp16'] else nullcontext()
     with context:
         rgb, _, extras = render_fn(
             rays_o,
@@ -206,11 +213,16 @@ def render_val(config, model, render_kwargs_test, render_fn, pose, camera_params
     mask_volume = extras['mask_volume'].cpu()
     mask_volume = mask_volume.reshape(H, W).unsqueeze(0).float().numpy()
 
+    ret_dict = dict()
+    ret_dict['image'] = img
+    ret_dict['mask_volume'] = mask_volume
+    return ret_dict
+
     images = wandb.Image(img, caption="Validation Image")
     
-    wandb.log({"val/images": images})
+    # wandb.log({"val/images": images})
 
-    return img, mask_volume
+    # return img, mask_volume
 
 
 
@@ -321,7 +333,10 @@ if __name__ == '__main__':
         if args.just_render:
             os.makedirs(args.render_path, exist_ok=True)
             for ii in i_split[1]:
-                img, mask_volume = render_val(config, model, render_kwargs_test, render_fn, poses[ii], camera_params)
+                val_ret_dict = render_val(config, model, render_kwargs_test, render_fn, poses[ii], camera_params)
+                img, mask_volume = val_ret_dict['image'], val_ret_dict['mask_volume']
+                # log to wandb
+                wandb.log({'val/images': wandb.Image('img', caption='Validation Image')})
                 # save the rgb
                 save_path = os.path.join(args.render_path, f'{ii:05d}.png')
                 print(f'Saving image to {save_path}')
@@ -337,11 +352,22 @@ if __name__ == '__main__':
             import sys
             sys.exit()
 
-        curr_loss = train(config, curr_iter, model, optimizer, imgs, poses, render_poses, camera_params, i_split, render_kwargs_test, render_fn)
-        wandb.log({"train/loss": curr_loss}, step=curr_iter)
+        train_ret_dict = train(config, curr_iter, model, optimizer, imgs, poses, render_poses, camera_params, i_split, render_kwargs_test, render_fn)
+
+
+        # ------------------------------------------------------------------------------
+        # logging
+        # ------------------------------------------------------------------------------
+        wandb.log({
+            'train/loss': train_ret_dict['loss'],
+            'train/eikonal_loss': train_ret_dict['eikonal_loss'],
+            'train/lr': train_ret_dict['lr'],
+            # 'train/ssim': train_ret_dict['ssim'],
+            'train/psnr': train_ret_dict['psnr']
+            }, step=curr_iter)
         
         if curr_iter % config['training']['i_val'] == 0:
-            psnr, mse = val(config, curr_iter, model, optimizer, imgs, poses, render_poses, camera_params, i_split, render_kwargs_test, render_fn)
+            curr_psnr, curr_mse = val(config, curr_iter, model, optimizer, imgs, poses, render_poses, camera_params, i_split, render_kwargs_test, render_fn)
         
         # ------------------------------------------------------------------------------
         # save checkpoints
@@ -352,8 +378,8 @@ if __name__ == '__main__':
                         curr_iter,
                         optimizer=optimizer,
                         scheduler=None,
-                        pnsr=psnr,
-                        mse=mse) # TODO add scheduler
+                        pnsr=curr_psnr,
+                        mse=curr_mse) # TODO add scheduler
 
         # ------------------------------------------------------------------------------
         # save images
