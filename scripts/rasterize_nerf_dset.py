@@ -50,7 +50,7 @@ def main(args):
             mesh = trim.Trimesh(**mesh_dict)
     elif file_ext == '.ply':
         with open(args.mesh_path, 'rb') as fd:
-            mesh_dict = trim.exchange.ply.load_ply(fd)
+            mesh_dict = trim.exchange.ply.load_ply(fd, fix_texture=False)
             mesh = trim.Trimesh(**mesh_dict)
         
     # mesh = trim.load(args.mesh_path, process=False)
