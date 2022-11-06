@@ -131,7 +131,8 @@ class RasterCaster(nn.Module):
                 viewdirs_attach,
                 n_mesh=1,
                 dropout_inners=False,
-                dropout_type='partial'):
+                dropout_type='partial',
+                alpha_composite=False):
         # TODO:
         # can we embed the barycentric coordinates and modulate
         # instead of adding
@@ -257,12 +258,127 @@ class RasterCaster(nn.Module):
 
             # hiddens.append(vert_hiddens)
         
-            rgb = self.head(vert_hiddens) # N x H x W x 4
+            rgb = self.head(vert_hiddens) # N x H x W x 4/3
+
             rgbas_list.append(rgb) 
 
-        # rgbas = torch.cat(rgbas_list, dim=-2) # N x H x W x (3xnm) x n_chan
-
         return rgbas_list
+
+def prep_lists_for_compositing(in_list):
+    """ given a list of outputs from shells, flatten them for compositing
+    Args:
+        in_list: List of len nm of tensors of shape NxHxWxC
+    Returns:
+        out_list: a single tensor of shape NHWx(nm)xC
+    """
+    # Assuming that the order is base, inside, out
+    bb, ii, oo = in_list # each is N x H x W x C
+    n_chan = bb.shape[-1]
+    bb = bb.view(-1, n_chan).unsqueeze(-2) # NHW x 1 x C
+    ii = ii.view(-1, n_chan).unsqueeze(-2) # NHW x 1 x C
+    oo = oo.view(-1, n_chan).unsqueeze(-2) # NHW x 1 x C
+
+    output_tensor = torch.cat([oo, bb, ii], dim=-2) # maintain channels NxHxWx(nm)xC
+    output_tensor = output_tensor.squeeze(-1) # NHW x (nm)xC squeeze last channel
+    return output_tensor
+
+@torch.no_grad()
+def compute_masks(zero, inside, outside):
+    with torch.no_grad():
+        no_hit = ~(zero.bool() | inside.bool() | outside.bool())
+        one_hit = ~(zero.bool() | inside.bool() | ~outside.bool())
+        two_hit = ~(~zero.bool() | inside.bool() | ~outside.bool())
+        three_hit = ~(~zero.bool() | ~inside.bool() | ~outside.bool())
+
+    return no_hit.detach(), one_hit.detach(), two_hit.detach(), three_hit.detach()
+
+@torch.no_grad()
+def correct_depths(is_hit_masks_lists, depths_list, bkgd_depths=(7, 7.25, 7.5), virtual_offset=0.03):
+    """ Rays do not hit all meshes. We want to make a virtual intersection point just
+        after the hit point with outside meshes
+    Args:
+        is_hit_masks_lists: list of nm masks of shape N x H x W
+        depths_list: list of nm depths
+    Returns:
+        corrected_depths_list: list of nm depths, where the background is given a virtual intersection point
+    """
+    # the current order is base, in, out
+    hit_masks = compute_masks(*is_hit_masks_lists)
+    depths_list = [d.clone().detach() for d in depths_list]
+    
+    BASE_IDX = 0
+    OUTER_IDX = 2
+    INSIDE_IDX = 1
+
+    NO_HIT_IDX = 0
+    ONE_HIT_IDX = 1
+    TWO_HIT_IDX = 2
+    THREE_HIT_IDX = 3
+
+    # No hit adjustments
+    depths_list[OUTER_IDX][hit_masks[NO_HIT_IDX]] = bkgd_depths[0] # out -> closest
+    depths_list[BASE_IDX][hit_masks[NO_HIT_IDX]] = bkgd_depths[1] # base -> middle
+    depths_list[INSIDE_IDX][hit_masks[NO_HIT_IDX]] = bkgd_depths[2] # in -> farthest
+    
+    # one hit adjustments
+    # outer has been hit, move others to virtual offset
+    depths_list[BASE_IDX][hit_masks[ONE_HIT_IDX]] = depths_list[OUTER_IDX][hit_masks[ONE_HIT_IDX]] + virtual_offset
+    depths_list[INSIDE_IDX][hit_masks[ONE_HIT_IDX]] = depths_list[OUTER_IDX][hit_masks[ONE_HIT_IDX]] + 2 * virtual_offset
+    
+    # Two hit adjustments
+    # outer and base hit, move inner to base + virtual_offset
+    depths_list[INSIDE_IDX][hit_masks[TWO_HIT_IDX]] = depths_list[BASE_IDX][hit_masks[TWO_HIT_IDX]] + virtual_offset
+
+    return depths_list, hit_masks
+
+
+# from https://github.com/yenchenlin/nerf-pytorch/blob/63a5a630c9abd62b0f21c08703d0ac2ea7d4b9dd/run_nerf.py#L262
+def raw2outputs(raw, z_vals, rays_d, raw_noise_std=0, white_bkgd=False, pytest=False):
+    """Transforms model's predictions to semantically meaningful values.
+    Args:
+        raw: [num_rays, num_samples along ray, 4]. Prediction from model.
+        z_vals: [num_rays, num_samples along ray]. Integration time.
+        rays_d: [num_rays, 3]. Direction of each ray.
+    Returns:
+        rgb_map: [num_rays, 3]. Estimated RGB color of a ray.
+        disp_map: [num_rays]. Disparity map. Inverse of depth map.
+        acc_map: [num_rays]. Sum of weights along each ray.
+        weights: [num_rays, num_samples]. Weights assigned to each sampled color.
+        depth_map: [num_rays]. Estimated distance to object.
+    """
+    raw2alpha = lambda raw, dists, act_fn=F.relu: 1.-torch.exp(-act_fn(raw)*dists)
+
+    dists = z_vals[...,1:] - z_vals[...,:-1]
+    neg = dists < 0
+    dists[neg] = -dists[neg]
+    dists = torch.cat([dists, torch.Tensor([1e10]).expand(dists[...,:1].shape).to(dists.device)], -1)  # [N_rays, N_samples]
+
+    # dists = dists * torch.norm(rays_d[...,None,:], dim=-1)
+
+    rgb = torch.sigmoid(raw[...,:3])  # [N_rays, N_samples, 3]
+    noise = 0.
+    # if raw_noise_std > 0.:
+    #     noise = torch.randn(raw[...,3].shape) * raw_noise_std
+
+    #     # Overwrite randomly sampled data if pytest
+    #     if pytest:
+    #         np.random.seed(0)
+    #         noise = np.random.rand(*list(raw[...,3].shape)) * raw_noise_std
+    #         noise = torch.Tensor(noise)
+
+    alpha = raw2alpha(raw[...,3] + noise, dists)  # [N_rays, N_samples]
+    # weights = alpha * tf.math.cumprod(1.-alpha + 1e-10, -1, exclusive=True)
+    weights = alpha * torch.cumprod(torch.cat([torch.ones((alpha.shape[0], 1)).to(dists.device), 1.-alpha + 1e-10], -1), -1)[:, :-1]
+    rgb_map = torch.sum(weights[...,None] * rgb, -2)  # [N_rays, 3]
+
+    depth_map = torch.sum(weights * z_vals, -1)
+    disp_map = 1./torch.max(1e-10 * torch.ones_like(depth_map), depth_map / torch.sum(weights, -1))
+    acc_map = torch.sum(weights, -1)
+
+    if white_bkgd:
+        rgb_map = rgb_map + (1.-acc_map[...,None])
+
+    return rgb_map, disp_map, acc_map, weights, depth_map
 
 def alpha_composite_rgbs(rgba_list):
     """ alpha composite a list of rgbs 
