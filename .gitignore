@@ -2,6 +2,10 @@
 .vscode
 *__pycache__
 
+# jupyter
+*/*.ipynb_checkpoints
+*.ipynb_checkpoints
+
 # data
 out
 data/*
@@ -14,9 +18,19 @@ playground
 env
 env/*
 
+# binaries
+ext
+ext/*
+FRNN/*
+FRNN
+
 # media
 *.ply
 */*.ply
 *.png
+*.jpg
+*/*.jpg
 *.obj
 *.mp4
+*.pth
+*/*.pth
