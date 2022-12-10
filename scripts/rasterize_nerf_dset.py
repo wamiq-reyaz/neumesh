@@ -59,7 +59,7 @@ def generate_data_maps(intersector, triangle_matrix, mesh, pose, intrinsics, H, 
     # -------------------------------------
     # Vertex idx image
     # -------------------------------------
-    idxes = np.ones((H*W)) * -1
+    idxes = np.ones((H*W)) * -1 # WARNING: +1 added later
     idxes[idx_ray] = tri_idx
 
     idxes = idxes.reshape(H, W)
@@ -70,7 +70,7 @@ def generate_data_maps(intersector, triangle_matrix, mesh, pose, intrinsics, H, 
     vert_idxer = np.array(mesh.faces) # Nfaces x 3
     pad_idxer = np.array([-1, -1, -1]).reshape(1,3) # will put -1 where there are empty triangles  
     vert_idxer = np.concatenate([pad_idxer, vert_idxer], 0)
-    vert_idx = vert_idxer[idxes+1] # H x W x 3
+    vert_idx = vert_idxer[idxes+1] # H x W x 3 # WARNING: +1 added here
 
     # -------------------------------------
     # barycentric image
@@ -158,7 +158,7 @@ def main(args):
 
     # Load
     print('Loading scenes...')
-    imgs, poses, render_poses, camera_params, i_split, fnames = load_blender.load_blender_data(args.indir,
+    imgs, poses, _, camera_params, i_split, _ = load_blender.load_blender_data(args.indir,
                                                             half_res=False,
                                                             testskip=1,
                                                             splits=['train', 'test'])
