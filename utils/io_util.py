@@ -20,6 +20,7 @@ import torch
 import skimage
 from skimage.transform import rescale
 from natsort import natsorted
+import matplotlib
 
 import re
 
@@ -37,6 +38,40 @@ def re_glob(path, pattern):
     pattern = r'.*' + pattern
             
     return [f for f in files if re.match(pattern, f)]
+
+
+def colorize(value, vmin=10, vmax=1000, cmap='magma_r', invalid_val = -99, invalid_mask = None, background_color=(128,128,128,255)):
+    """
+    value : a depth map
+    """
+    if isinstance(value, torch.Tensor):
+        value = value.detach().cpu().numpy()
+
+
+    value = value.squeeze()
+    if invalid_mask is None:
+        invalid_mask = value == invalid_val
+    mask = np.logical_not(invalid_mask)
+
+    # normalize
+    vmin = value[mask].min() if vmin is None else vmin
+    vmax = value[mask].max() if vmax is None else vmax
+    if vmin != vmax:
+        value = (value - vmin) / (vmax - vmin)  # vmin..vmax
+    else:
+        # Avoid 0-division
+        value = value * 0.
+    # squeeze last dim if it exists
+    # white out the invalid values
+    value[invalid_mask] = np.nan
+    cmapper = matplotlib.cm.get_cmap(cmap)
+    value = cmapper(value, bytes=True)  # (nxmx4)
+
+    # img = value[:, :, :]
+    img = value[...]
+    img[invalid_mask] = background_color
+
+    return img
 
 
 def dir_to_video(path, fps=30, pattern=r'*.png', out_path=None, out_name='video.mp4'):
@@ -60,7 +95,9 @@ def sanitize_for_o3d(x):
 
     if x.ndim == 3:
         x = np.squeeze(x)
-            
+    elif x.ndim == 1:
+        x = x[None, :]
+
     if x.ndim != 2:
         raise ValueError("Invalid shape for points/normals/color")
     return x
